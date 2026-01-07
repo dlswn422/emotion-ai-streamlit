@@ -311,11 +311,26 @@ def render_upload():
 
 
     if uploaded_file:
-        
+        file_name = uploaded_file.name.lower()
+
         try:
-            df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df = pd.read_csv(uploaded_file, encoding="cp949")
+            if file_name.endswith(".csv"):
+                try:
+                    df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+                except UnicodeDecodeError:
+                    df = pd.read_csv(uploaded_file, encoding="cp949")
+
+            elif file_name.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file)
+
+            else:
+                st.error("지원하지 않는 파일 형식입니다.")
+                return
+
+        except Exception as e:
+            st.error("파일을 읽는 중 오류가 발생했습니다.")
+            st.exception(e)
+            return
         
         st.success("파일 업로드 완료")
         st.info(f"총 {len(df)}건의 리뷰가 확인되었습니다")
