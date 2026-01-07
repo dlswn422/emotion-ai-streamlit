@@ -16,7 +16,6 @@
 import os
 import json
 import re
-import platform
 
 # =========================
 # Streamlit & 데이터 처리
@@ -97,6 +96,37 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+def extract_review_texts(df: pd.DataFrame) -> list[str]:
+    """
+    설문 응답 DataFrame에서
+    언어/질문 형식에 상관없이
+    '의견 문장'만 자동 추출
+    """
+
+    reviews: list[str] = []
+
+    for col in df.columns:
+        # 1️⃣ 숫자형 컬럼 제외 (점수, 나이 등)
+        if pd.api.types.is_numeric_dtype(df[col]):
+            continue
+
+        # 2️⃣ 문자열로 변환 + 결측 제거
+        texts = (
+            df[col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        # 3️⃣ 너무 짧은 값 제외 (예: OK, good, yes)
+        texts = texts[texts.str.len() >= 5]
+
+        # 4️⃣ 모든 언어 그대로 수집 (한/영/혼합 OK)
+        reviews.extend(texts.tolist())
+
+    return reviews
 
 # ==============================
 # 6. 비즈니스 로직 (AI 분석 영역)
@@ -538,34 +568,3 @@ elif st.session_state.page == "upload":
 elif st.session_state.page == "dashboard":
     render_dashboard()
 
-
-
-def extract_review_texts(df: pd.DataFrame) -> list[str]:
-    """
-    설문 응답 DataFrame에서
-    언어/질문 형식에 상관없이
-    '의견 문장'만 자동 추출
-    """
-
-    reviews: list[str] = []
-
-    for col in df.columns:
-        # 1️⃣ 숫자형 컬럼 제외 (점수, 나이 등)
-        if pd.api.types.is_numeric_dtype(df[col]):
-            continue
-
-        # 2️⃣ 문자열로 변환 + 결측 제거
-        texts = (
-            df[col]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
-
-        # 3️⃣ 너무 짧은 값 제외 (예: OK, good, yes)
-        texts = texts[texts.str.len() >= 5]
-
-        # 4️⃣ 모든 언어 그대로 수집 (한/영/혼합 OK)
-        reviews.extend(texts.tolist())
-
-    return reviews
