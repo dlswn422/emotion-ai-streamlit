@@ -16,7 +16,7 @@
 import os
 import json
 import re
-from collections import Counter
+import platform
 
 # =========================
 # Streamlit & 데이터 처리
@@ -40,49 +40,36 @@ import matplotlib.font_manager as fm
 # ==============================
 # 2. 환경 변수 로드
 # ==============================
-
-# 프로젝트 루트의 .env 파일을 읽어서
-# OPENAI_API_KEY 같은 환경 변수를 시스템에 등록
 load_dotenv()
 
-
 # ==============================
-# 2. OpenAI 클라이언트 생성
+# 3. OpenAI 클라이언트 생성
 # ==============================
-
-# .env에 저장된 OPENAI_API_KEY를 불러와
-# OpenAI API와 통신하기 위한 클라이언트 객체 생성
-#
-# 이 client 객체를 통해 GPT 모델을 호출하게 된다.
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
 # ==============================
-# 3. 앱 기본 설정 (필수)
+# 4. 앱 기본 설정
 # ==============================
 st.set_page_config(
-    page_title="리뷰 분석 서비스",  # 브라우저 탭 제목
-    page_icon="📊",                # 파비콘
-    layout="wide"                  # 대시보드용 넓은 레이아웃
+    page_title="리뷰 분석 서비스",
+    page_icon="📊",
+    layout="wide"
 )
 
 # ==============================
-# 4. Session State 초기화
+# 5. Session State 초기화
 # ==============================
-# 현재 보고 있는 화면 상태
 if "page" not in st.session_state:
-    st.session_state.page = "home"   # home | upload | dashboard
+    st.session_state.page = "home"
 
-# 분석 결과 저장용
 if "result" not in st.session_state:
     st.session_state.result = None
 
 # ==============================
-# 5. 공통 CSS (카드 스타일)
+# 6. 공통 CSS
 # ==============================
-# Streamlit 기본 UI는 밋밋하므로
-# 카드 느낌을 주기 위한 최소한의 CSS만 사용
 st.markdown("""
 <style>
 .metric-card {
@@ -99,31 +86,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================
-# 6. 비즈니스 로직 (AI 분석 영역)
+# 7. AI 분석 로직
 # ==============================
 def analyze_reviews(df: pd.DataFrame):
     """
-    CSV로 업로드된 리뷰 데이터를 GPT로 분석하는 함수 (최종 버전)
-
-    입력:
-        df (DataFrame): 'review' 컬럼을 포함한 리뷰 데이터
-
-    출력:
-        dict:
-            {
-              total: int,
-              positive: int,
-              neutral: int,
-              negative: int,
-              score: float,        # ⭐ 10점 만점 종합 점수
-              keywords: list[str],
-              summary: str
-            }
+    CSV로 업로드된 리뷰 데이터를 GPT로 분석
     """
 
-    # ==============================
-    # 1. 리뷰 텍스트 추출
-    # ==============================
     if "review" not in df.columns:
         return {
             "total": 0,
@@ -153,9 +122,6 @@ def analyze_reviews(df: pd.DataFrame):
             "summary": ""
         }
 
-    # ==============================
-    # 2. GPT 프롬프트 구성
-    # ==============================
     prompt = f"""
 아래는 고객 리뷰 목록입니다.
 
@@ -170,17 +136,12 @@ def analyze_reviews(df: pd.DataFrame):
   "neutral": 중립 리뷰 수 (정수),
   "negative": 부정 리뷰 수 (정수),
   "score": 전체 리뷰 만족도를 0~10점 사이 숫자로 평가 (소수점 1자리),
-  "keywords": ["형태소 기준 핵심 키워드 5개 (예: 친절, 응대, 가격)"],
+  "keywords": ["형태소 기준 핵심 키워드 5개"],
   "summary": "전체 리뷰 요약 문단"
 }}
 """
 
-    # ==============================
-    # 3. GPT 호출
-    # ==============================
     try:
-        client = OpenAI()  # .env의 OPENAI_API_KEY 사용
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -191,26 +152,7 @@ def analyze_reviews(df: pd.DataFrame):
         )
 
         content = response.choices[0].message.content
-
-    except Exception:
-        return {
-            "total": len(reviews),
-            "positive": 0,
-            "neutral": 0,
-            "negative": 0,
-            "score": 0.0,
-            "keywords": [],
-            "summary": ""
-        }
-
-    # ==============================
-    # 4. GPT 응답 JSON 파싱
-    # ==============================
-    try:
         match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not match:
-            raise ValueError("JSON 형식 응답 없음")
-
         gpt_result = json.loads(match.group())
 
     except Exception:
@@ -224,32 +166,21 @@ def analyze_reviews(df: pd.DataFrame):
             "summary": ""
         }
 
-    # ==============================
-    # 5. 최종 결과 반환
-    # ==============================
     return {
-        "total": int(gpt_result.get("total", len(reviews)) or 0),
-        "positive": int(gpt_result.get("positive", 0) or 0),
-        "neutral": int(gpt_result.get("neutral", 0) or 0),
-        "negative": int(gpt_result.get("negative", 0) or 0),
-        "score": float(gpt_result.get("score", 0.0) or 0.0),  # ⭐ 핵심
-        "keywords": gpt_result.get("keywords", []) or [],
-        "summary": gpt_result.get("summary", "") or ""
+        "total": int(gpt_result.get("total", len(reviews))),
+        "positive": int(gpt_result.get("positive", 0)),
+        "neutral": int(gpt_result.get("neutral", 0)),
+        "negative": int(gpt_result.get("negative", 0)),
+        "score": float(gpt_result.get("score", 0.0)),
+        "keywords": gpt_result.get("keywords", []),
+        "summary": gpt_result.get("summary", "")
     }
 
 
 # ==============================
-# 7-1. 메인 화면 (랜딩 페이지)
+# 8. 메인 화면
 # ==============================
 def render_home():
-    """
-    서비스 소개용 메인 화면
-    - 서비스 설명
-    - 기능 요약
-    - '리뷰 분석 시작' CTA 버튼
-    """
-
-    # 제목 + 설명 (히어로 영역)
     st.markdown("""
     <h1 style="font-size:48px;">📊 리뷰 분석 서비스</h1>
     <p style="font-size:18px; color:#6B7280;">
@@ -258,70 +189,16 @@ def render_home():
     </p>
     """, unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # CTA 버튼 (가장 중요)
     if st.button("🚀 리뷰 분석 시작", use_container_width=True):
         st.session_state.page = "upload"
         st.rerun()
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
-
-    # 기능 요약 카드 3개
-    col1, col2, col3 = st.columns(3)
-
-    col1.markdown("""
-    <div class="metric-card">
-        <h3>📂 엑셀 업로드</h3>
-        <p style="color:#6B7280;">
-        리뷰 데이터를 한 번에 업로드
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col2.markdown("""
-    <div class="metric-card">
-        <h3>🤖 AI 분석</h3>
-        <p style="color:#6B7280;">
-        감성·키워드 자동 분석
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col3.markdown("""
-    <div class="metric-card">
-        <h3>📈 대시보드</h3>
-        <p style="color:#6B7280;">
-        한 눈에 보는 인사이트
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div class='section-gap'></div>", unsafe_allow_html=True)
-
-    # 사용 방법 안내
-    st.markdown("### 사용 방법")
-    step1, step2, step3 = st.columns(3)
-
-    step1.markdown("**1️⃣ 엑셀 업로드**  \n리뷰 데이터 준비")
-    step2.markdown("**2️⃣ AI 분석 실행**  \n자동 인사이트 도출")
-    step3.markdown("**3️⃣ 결과 확인**  \n대시보드에서 확인")
 
 # ==============================
-# 7-2. 업로드 화면
+# 9. 업로드 화면
 # ==============================
 def render_upload():
-    """
-    엑셀 파일 업로드 화면
-    - 파일 업로드
-    - 데이터 미리보기
-    - 분석 실행 버튼
-    """
-
     st.title("📂 리뷰 데이터 업로드")
-    st.caption("엑셀(.xlsx) 파일을 업로드하세요")
-
-    st.divider()
 
     uploaded_file = st.file_uploader(
         " ",
@@ -329,256 +206,111 @@ def render_upload():
         label_visibility="collapsed"
     )
 
-
     if uploaded_file:
-        
         try:
             df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
         except UnicodeDecodeError:
             df = pd.read_csv(uploaded_file, encoding="cp949")
-        
-        st.success("파일 업로드 완료")
-        st.info(f"총 {len(df)}건의 리뷰가 확인되었습니다")
 
-        # 데이터 미리보기
-        with st.expander("업로드 데이터 미리보기"):
-            st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(df.head())
 
-        # 분석 실행 버튼
         if st.button("🤖 AI 분석 실행", use_container_width=True):
-            with st.spinner("AI가 리뷰를 분석 중입니다..."):
-                result = analyze_reviews(df)
-
-            # 결과 저장 후 대시보드로 이동
-            st.session_state.result = result
+            with st.spinner("AI 분석 중..."):
+                st.session_state.result = analyze_reviews(df)
             st.session_state.page = "dashboard"
             st.rerun()
 
-    st.divider()
-
-    # 메인으로 돌아가기
     if st.button("← 메인으로"):
         st.session_state.page = "home"
         st.rerun()
 
+
 # ==============================
-# 7-3. 대시보드 화면
+# 10. 대시보드 화면
 # ==============================
 def render_dashboard():
-    """
-    GPT가 분석한 리뷰 결과를 시각화하는 대시보드 화면
-
-    포함 요소:
-    - KPI 카드 (총 리뷰 / 긍정 / 중립 / 부정)
-    - 감성 분포 막대 그래프
-    - 감성 비율 파이 차트
-    - 주요 키워드 카드
-    - 종합 만족도 점수 (10점 만점)
-    - GPT 요약 문장
-    """
-
     st.title("📊 리뷰 분석 대시보드")
-    st.caption("AI가 분석한 리뷰 인사이트 요약")
 
-    # =========================
-    # 1. 분석 결과 가져오기
-    # =========================
     result = st.session_state.get("result")
-
     if not result:
-        st.warning("분석 결과가 없습니다. 먼저 리뷰 분석을 실행해주세요.")
+        st.warning("분석 결과가 없습니다.")
         return
 
-    st.divider()
+    # KPI
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("총 리뷰 수", result["total"])
+    c2.metric("긍정 😊", result["positive"])
+    c3.metric("중립 😐", result["neutral"])
+    c4.metric("부정 😡", result["negative"])
 
-    # =========================
-    # 2. KPI 카드 영역
-    # =========================
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("총 리뷰 수", int(result.get("total", 0)))
-    col2.metric("긍정 😊", int(result.get("positive", 0)))
-    col3.metric("중립 😐", int(result.get("neutral", 0)))
-    col4.metric("부정 😡", int(result.get("negative", 0)))
-
-    st.divider()
-
-    # =========================
-    # 3. 감성 데이터프레임 생성
-    # =========================
+    # 감성 데이터
     sentiment_df = pd.DataFrame({
         "감성": ["긍정", "중립", "부정"],
         "리뷰 수": [
-            result.get("positive", 0),
-            result.get("neutral", 0),
-            result.get("negative", 0)
+            result["positive"],
+            result["neutral"],
+            result["negative"]
         ]
     }).set_index("감성")
 
-    # =========================
-    # 4. 감성 시각화 영역
-    # =========================
     col1, col2 = st.columns(2)
 
-    # ---- 4-1. 감성 분포 막대 그래프 ----
     with col1:
-        st.subheader("📊 감성 분포 (막대 그래프)")
-        st.bar_chart(sentiment_df, use_container_width=True)
+        st.subheader("📊 감성 분포")
+        st.bar_chart(sentiment_df)
 
-    # ---- 4-2. 감성 비율 파이 차트 ----
     with col2:
-        st.subheader("🥧 감성 비율 (파이 차트)")
+        st.subheader("🥧 감성 비율")
 
-        if sentiment_df["리뷰 수"].sum() == 0:
-            st.info("감성 비율을 표시할 데이터가 없습니다.")
-        else:
+        # ===== 폰트 안전 처리 =====
+        plt.rcParams["axes.unicode_minus"] = False
+        font_prop = None
+
+        if platform.system() == "Windows":
             font_path = "C:/Windows/Fonts/malgun.ttf"
-            font_prop = fm.FontProperties(fname=font_path)
+            if os.path.exists(font_path):
+                font_prop = fm.FontProperties(fname=font_path)
+                plt.rcParams["font.family"] = font_prop.get_name()
 
-            plt.rcParams["font.family"] = font_prop.get_name()
-            plt.rcParams["axes.unicode_minus"] = False
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.pie(
+            sentiment_df["리뷰 수"],
+            labels=None,
+            autopct="%1.1f%%",
+            startangle=90
+        )
 
-            fig, ax = plt.subplots(figsize=(5, 5))
+        ax.legend(
+            sentiment_df.index,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            prop=font_prop if font_prop else None
+        )
 
-            ax.pie(
-                sentiment_df["리뷰 수"],
-                labels=None,
-                autopct="%1.1f%%",
-                startangle=90
-            )
+        ax.set_title("감성 비율", fontproperties=font_prop if font_prop else None)
+        st.pyplot(fig)
 
-            ax.legend(
-                sentiment_df.index,
-                loc="center left",
-                bbox_to_anchor=(1.0, 0.5),
-                prop=font_prop
-            )
-
-            ax.set_title("감성 비율", fontproperties=font_prop)
-
-            plt.tight_layout()
-            st.pyplot(fig)
-
-    st.divider()
-
-    # =========================
-    # 5. 주요 키워드 카드 (먼저 표시)
-    # =========================
+    # 키워드
     st.subheader("🔑 주요 키워드")
+    cols = st.columns(len(result["keywords"]))
+    for c, k in zip(cols, result["keywords"]):
+        c.metric(k, "")
 
-    keywords = result.get("keywords", [])
-
-    if not keywords:
-        st.info("추출된 주요 키워드가 없습니다.")
-    else:
-        cols = st.columns(min(len(keywords), 6))
-
-        for col, keyword in zip(cols, keywords[:6]):
-            col.markdown(
-                f"""
-                <div style="
-                    padding:16px;
-                    border-radius:12px;
-                    background-color:#f9fafb;
-                    text-align:center;
-                    font-weight:600;
-                ">
-                    {keyword}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    st.divider()
-
-    # =========================
-    # ⭐ 6. 종합 만족도 점수 (키워드 다음)
-    # =========================
+    # 점수
     st.subheader("⭐ 종합 만족도")
+    st.markdown(f"## {result['score']} / 10")
 
-    score = result.get("score", None)
-
-    if score is not None:
-        score = round(float(score), 1)
-
-        if score >= 7:
-            bg_color = "#22c55e"
-        elif score >= 4:
-            bg_color = "#f59e0b"
-        else:
-            bg_color = "#ef4444"
-
-        st.markdown(
-            f"""
-            <div style="
-                padding:24px;
-                border-radius:16px;
-                background:{bg_color};
-                color:white;
-                text-align:center;
-                margin-bottom:24px;
-            ">
-                <div style="font-size:18px; opacity:0.9;">
-                    AI 종합 평가
-                </div>
-                <div style="font-size:48px; font-weight:700;">
-                    {score} / 10
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    else:
-        st.info("종합 만족도 점수를 표시할 수 없습니다.")
-
-    st.divider()
-
-    # =========================
-    # 7. GPT 요약 문장 (마지막)
-    # =========================
+    # 요약
     st.subheader("📝 AI 요약")
+    st.write(result["summary"])
 
-    summary = result.get("summary", "")
-
-    if summary:
-        st.markdown(
-            f"""
-            <div style="
-                padding:20px;
-                border-radius:14px;
-                background-color:white;
-                box-shadow:0 4px 14px rgba(0,0,0,0.06);
-                font-size:16px;
-                line-height:1.6;
-            ">
-                {summary}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    else:
-        st.info("요약 문장이 없습니다.")
-
-    st.divider()
-
-    # =========================
-    # 8. 하단 네비게이션 버튼
-    # =========================
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🔄 새 분석"):
-            st.session_state.page = "upload"
-            st.rerun()
-
-    with col2:
-        if st.button("🏠 메인으로"):
-            st.session_state.page = "home"
-            st.rerun()
+    if st.button("🏠 메인으로"):
+        st.session_state.page = "home"
+        st.rerun()
 
 
 # ==============================
-# 8. 화면 라우팅 (Navigation 역할)
+# 11. 화면 라우팅
 # ==============================
 if st.session_state.page == "home":
     render_home()
