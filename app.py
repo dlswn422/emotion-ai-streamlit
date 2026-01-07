@@ -101,32 +101,38 @@ st.markdown("""
 def extract_review_texts(df: pd.DataFrame) -> list[str]:
     """
     설문 응답 DataFrame에서
-    언어/질문 형식에 상관없이
-    '의견 문장'만 자동 추출
+    '응답자 1명 = 리뷰 1개' 기준으로
+    리뷰 텍스트를 추출
     """
 
-    reviews: list[str] = []
+    reviews = []
 
-    for col in df.columns:
-        # 1️⃣ 숫자형 컬럼 제외 (점수, 나이 등)
-        if pd.api.types.is_numeric_dtype(df[col]):
-            continue
+    for _, row in df.iterrows():
+        texts = []
 
-        # 2️⃣ 문자열로 변환 + 결측 제거
-        texts = (
-            df[col]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
+        for value in row.values:
+            if pd.isna(value):
+                continue
 
-        # 3️⃣ 너무 짧은 값 제외 (예: OK, good, yes)
-        texts = texts[texts.str.len() >= 5]
+            value = str(value).strip()
 
-        # 4️⃣ 모든 언어 그대로 수집 (한/영/혼합 OK)
-        reviews.extend(texts.tolist())
+            # 숫자만 있는 값 제외 (만족도 점수 등)
+            if value.replace(".", "").isdigit():
+                continue
+
+            # 너무 짧은 텍스트 제외
+            if len(value) < 5:
+                continue
+
+            texts.append(value)
+
+        # 한 행의 텍스트를 하나로 합침
+        if texts:
+            combined = " / ".join(texts)
+            reviews.append(combined)
 
     return reviews
+
 
 # ==============================
 # 6. 비즈니스 로직 (AI 분석 영역)
@@ -214,7 +220,7 @@ def analyze_reviews(reviews: list[str]):
         }
 
     # =========================
-    # ✅ Python에서 감성 집계
+    # Python에서 감성 집계
     # =========================
     sentiments = gpt_result.get("sentiments", [])
 
