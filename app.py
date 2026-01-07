@@ -309,8 +309,8 @@ def render_upload():
         label_visibility="collapsed"
     )
 
-
     if uploaded_file:
+        
         file_name = uploaded_file.name.lower()
 
         try:
