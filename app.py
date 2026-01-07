@@ -139,11 +139,11 @@ def extract_review_texts(df: pd.DataFrame) -> list[str]:
 # ==============================
 def analyze_reviews(reviews: list[str]):
     """
-    다국어(한국어/영어/혼합) 리뷰 리스트를 입력받아
-    분석 결과는 무조건 한국어로 반환한다.
+    리뷰 리스트를 입력받아 GPT로 분석한다.
 
-    - 리뷰 개수/긍정/중립/부정 계산은 Python에서 수행
-    - GPT는 감성 판단과 요약만 담당
+    기준:
+    - GPT에게 전달한 리뷰 수 = 총 리뷰 수
+    - 긍/중/부정의 합은 항상 총 리뷰 수와 같음
     """
 
     if not reviews:
@@ -157,13 +157,20 @@ def analyze_reviews(reviews: list[str]):
             "summary": ""
         }
 
+    # =========================
+    # 1. GPT에 전달할 리뷰 제한
+    # =========================
     sample_reviews = reviews[:50]
+    total = len(sample_reviews)   # ⭐ 핵심: 총 리뷰 수 = GPT 기준
 
+    # =========================
+    # 2. 프롬프트
+    # =========================
     prompt = f"""
-아래는 고객 설문 및 리뷰 응답 목록입니다.
-응답은 한국어, 영어 또는 혼합 언어일 수 있습니다.
+아래는 고객 리뷰 목록입니다.
+(총 {total}개 리뷰)
 
-리뷰 목록:
+리뷰:
 {chr(10).join(sample_reviews)}
 
 각 리뷰에 대해 감성을 판단하세요.
@@ -175,8 +182,8 @@ def analyze_reviews(reviews: list[str]):
   - neutral
   - negative
 - 개수나 통계는 계산하지 말 것
-- 모든 설명과 요약은 한국어로 작성
-- 키워드는 원문 언어를 유지
+- 모든 설명은 한국어로 작성
+- 키워드는 원문 언어 유지
 
 반드시 아래 JSON 형식으로만 답변하세요.
 
@@ -184,7 +191,7 @@ def analyze_reviews(reviews: list[str]):
   "sentiments": ["positive", "neutral", "negative", ...],
   "score": 전체 만족도를 0~10점 사이 숫자로 평가 (소수점 1자리),
   "keywords": ["핵심 키워드 5개"],
-  "summary": "전체 리뷰를 한 문단으로 요약한 한국어 문장"
+  "summary": "전체 리뷰 요약 (한국어)"
 }}
 """
 
@@ -195,8 +202,8 @@ def analyze_reviews(reviews: list[str]):
                 {
                     "role": "system",
                     "content": (
-                        "너는 다국어 설문 데이터를 분석하는 전문가다. "
-                        "입력 언어와 관계없이 분석 결과는 반드시 한국어로 제공해야 한다."
+                        "너는 다국어 리뷰를 분석하는 전문가다. "
+                        "결과는 반드시 한국어로 제공한다."
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -210,7 +217,7 @@ def analyze_reviews(reviews: list[str]):
 
     except Exception:
         return {
-            "total": len(reviews),
+            "total": total,
             "positive": 0,
             "neutral": 0,
             "negative": 0,
@@ -220,17 +227,16 @@ def analyze_reviews(reviews: list[str]):
         }
 
     # =========================
-    # Python에서 감성 집계
+    # 3. 감성 집계 (GPT 기준)
     # =========================
-    sentiments = gpt_result.get("sentiments", [])
+    sentiments = gpt_result.get("sentiments", [])[:total]
 
-    # 안전 장치 (길이 불일치 방어)
-    sentiments = sentiments[:len(reviews)]
-
-    total = len(reviews)
     positive = sentiments.count("positive")
     neutral = sentiments.count("neutral")
     negative = sentiments.count("negative")
+
+    # 안전 검증 (디버깅용으로 매우 중요)
+    assert positive + neutral + negative == total
 
     return {
         "total": total,
