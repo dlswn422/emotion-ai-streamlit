@@ -101,46 +101,11 @@ st.markdown("""
 # ==============================
 # 6. 비즈니스 로직 (AI 분석 영역)
 # ==============================
-def analyze_reviews(df: pd.DataFrame):
+def analyze_reviews(reviews: list[str]):
     """
-    CSV로 업로드된 리뷰 데이터를 GPT로 분석하는 함수 (최종 버전)
-
-    입력:
-        df (DataFrame): 'review' 컬럼을 포함한 리뷰 데이터
-
-    출력:
-        dict:
-            {
-              total: int,
-              positive: int,
-              neutral: int,
-              negative: int,
-              score: float,        # ⭐ 10점 만점 종합 점수
-              keywords: list[str],
-              summary: str
-            }
+    다국어(한국어/영어/혼합) 리뷰를 입력받아
+    분석 결과는 무조건 한국어로 반환
     """
-
-    # ==============================
-    # 1. 리뷰 텍스트 추출
-    # ==============================
-    if "review" not in df.columns:
-        return {
-            "total": 0,
-            "positive": 0,
-            "neutral": 0,
-            "negative": 0,
-            "score": 0.0,
-            "keywords": [],
-            "summary": ""
-        }
-
-    reviews = (
-        df["review"]
-        .dropna()
-        .astype(str)
-        .tolist()
-    )
 
     if not reviews:
         return {
@@ -153,64 +118,52 @@ def analyze_reviews(df: pd.DataFrame):
             "summary": ""
         }
 
-    # ==============================
-    # 2. GPT 프롬프트 구성
-    # ==============================
+    sample_reviews = reviews[:50]
+
     prompt = f"""
-아래는 고객 리뷰 목록입니다.
+아래는 고객 설문 및 리뷰 응답 목록입니다.
+응답은 한국어, 영어 또는 혼합 언어일 수 있습니다.
 
-리뷰:
-{chr(10).join(reviews[:50])}
+리뷰 목록:
+{chr(10).join(sample_reviews)}
 
-이 리뷰들을 분석해서 반드시 아래 JSON 형식으로만 답변하세요.
+위 리뷰들을 분석하여 **반드시 한국어로** 아래 JSON 형식으로만 답변하세요.
 
+중요 규칙:
+- 모든 설명과 요약은 한국어로 작성
+- 키워드는 원문 언어를 유지 (예: service, 가격, staff)
+- JSON 이외의 텍스트는 절대 포함하지 말 것
+
+반환 형식:
 {{
   "total": 전체 리뷰 수 (정수),
   "positive": 긍정 리뷰 수 (정수),
   "neutral": 중립 리뷰 수 (정수),
   "negative": 부정 리뷰 수 (정수),
-  "score": 전체 리뷰 만족도를 0~10점 사이 숫자로 평가 (소수점 1자리),
-  "keywords": ["형태소 기준 핵심 키워드 5개 (예: 친절, 응대, 가격)"],
-  "summary": "전체 리뷰 요약 문단"
+  "score": 전체 만족도를 0~10점 사이 숫자로 평가 (소수점 1자리),
+  "keywords": ["핵심 키워드 5개"],
+  "summary": "전체 리뷰를 한 문단으로 요약한 한국어 문장"
 }}
 """
 
-    # ==============================
-    # 3. GPT 호출
-    # ==============================
     try:
-        client = OpenAI()  # .env의 OPENAI_API_KEY 사용
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "너는 고객 리뷰 분석 전문가다."},
+                {
+                    "role": "system",
+                    "content": (
+                        "너는 다국어 설문 데이터를 분석하는 전문가다. "
+                        "입력 언어와 관계없이 분석 결과는 반드시 한국어로 제공해야 한다."
+                    )
+                },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3
         )
 
         content = response.choices[0].message.content
-
-    except Exception:
-        return {
-            "total": len(reviews),
-            "positive": 0,
-            "neutral": 0,
-            "negative": 0,
-            "score": 0.0,
-            "keywords": [],
-            "summary": ""
-        }
-
-    # ==============================
-    # 4. GPT 응답 JSON 파싱
-    # ==============================
-    try:
         match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not match:
-            raise ValueError("JSON 형식 응답 없음")
-
         gpt_result = json.loads(match.group())
 
     except Exception:
@@ -224,17 +177,14 @@ def analyze_reviews(df: pd.DataFrame):
             "summary": ""
         }
 
-    # ==============================
-    # 5. 최종 결과 반환
-    # ==============================
     return {
-        "total": int(gpt_result.get("total", len(reviews)) or 0),
-        "positive": int(gpt_result.get("positive", 0) or 0),
-        "neutral": int(gpt_result.get("neutral", 0) or 0),
-        "negative": int(gpt_result.get("negative", 0) or 0),
-        "score": float(gpt_result.get("score", 0.0) or 0.0),  # ⭐ 핵심
-        "keywords": gpt_result.get("keywords", []) or [],
-        "summary": gpt_result.get("summary", "") or ""
+        "total": int(gpt_result.get("total", len(reviews))),
+        "positive": int(gpt_result.get("positive", 0)),
+        "neutral": int(gpt_result.get("neutral", 0)),
+        "negative": int(gpt_result.get("negative", 0)),
+        "score": float(gpt_result.get("score", 0.0)),
+        "keywords": gpt_result.get("keywords", []),
+        "summary": gpt_result.get("summary", "")
     }
 
 
@@ -347,7 +297,8 @@ def render_upload():
         # 분석 실행 버튼
         if st.button("🤖 AI 분석 실행", use_container_width=True):
             with st.spinner("AI가 리뷰를 분석 중입니다..."):
-                result = analyze_reviews(df)
+                reviews = extract_review_texts(df)
+                result = analyze_reviews(reviews)
 
             # 결과 저장 후 대시보드로 이동
             st.session_state.result = result
@@ -586,3 +537,35 @@ elif st.session_state.page == "upload":
     render_upload()
 elif st.session_state.page == "dashboard":
     render_dashboard()
+
+
+
+def extract_review_texts(df: pd.DataFrame) -> list[str]:
+    """
+    설문 응답 DataFrame에서
+    언어/질문 형식에 상관없이
+    '의견 문장'만 자동 추출
+    """
+
+    reviews: list[str] = []
+
+    for col in df.columns:
+        # 1️⃣ 숫자형 컬럼 제외 (점수, 나이 등)
+        if pd.api.types.is_numeric_dtype(df[col]):
+            continue
+
+        # 2️⃣ 문자열로 변환 + 결측 제거
+        texts = (
+            df[col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        # 3️⃣ 너무 짧은 값 제외 (예: OK, good, yes)
+        texts = texts[texts.str.len() >= 5]
+
+        # 4️⃣ 모든 언어 그대로 수집 (한/영/혼합 OK)
+        reviews.extend(texts.tolist())
+
+    return reviews
