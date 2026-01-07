@@ -133,8 +133,11 @@ def extract_review_texts(df: pd.DataFrame) -> list[str]:
 # ==============================
 def analyze_reviews(reviews: list[str]):
     """
-    다국어(한국어/영어/혼합) 리뷰를 입력받아
-    분석 결과는 무조건 한국어로 반환
+    다국어(한국어/영어/혼합) 리뷰 리스트를 입력받아
+    분석 결과는 무조건 한국어로 반환한다.
+
+    - 리뷰 개수/긍정/중립/부정 계산은 Python에서 수행
+    - GPT는 감성 판단과 요약만 담당
     """
 
     if not reviews:
@@ -157,19 +160,22 @@ def analyze_reviews(reviews: list[str]):
 리뷰 목록:
 {chr(10).join(sample_reviews)}
 
-위 리뷰들을 분석하여 **반드시 한국어로** 아래 JSON 형식으로만 답변하세요.
+각 리뷰에 대해 감성을 판단하세요.
 
-중요 규칙:
+규칙:
+- 각 리뷰마다 하나의 감성만 선택
+- 선택지는 반드시 아래 중 하나:
+  - positive
+  - neutral
+  - negative
+- 개수나 통계는 계산하지 말 것
 - 모든 설명과 요약은 한국어로 작성
-- 키워드는 원문 언어를 유지 (예: service, 가격, staff)
-- JSON 이외의 텍스트는 절대 포함하지 말 것
+- 키워드는 원문 언어를 유지
 
-반환 형식:
+반드시 아래 JSON 형식으로만 답변하세요.
+
 {{
-  "total": 전체 리뷰 수 (정수),
-  "positive": 긍정 리뷰 수 (정수),
-  "neutral": 중립 리뷰 수 (정수),
-  "negative": 부정 리뷰 수 (정수),
+  "sentiments": ["positive", "neutral", "negative", ...],
   "score": 전체 만족도를 0~10점 사이 숫자로 평가 (소수점 1자리),
   "keywords": ["핵심 키워드 5개"],
   "summary": "전체 리뷰를 한 문단으로 요약한 한국어 문장"
@@ -207,14 +213,27 @@ def analyze_reviews(reviews: list[str]):
             "summary": ""
         }
 
+    # =========================
+    # ✅ Python에서 감성 집계
+    # =========================
+    sentiments = gpt_result.get("sentiments", [])
+
+    # 안전 장치 (길이 불일치 방어)
+    sentiments = sentiments[:len(reviews)]
+
+    total = len(reviews)
+    positive = sentiments.count("positive")
+    neutral = sentiments.count("neutral")
+    negative = sentiments.count("negative")
+
     return {
-        "total": int(gpt_result.get("total", len(reviews))),
-        "positive": int(gpt_result.get("positive", 0)),
-        "neutral": int(gpt_result.get("neutral", 0)),
-        "negative": int(gpt_result.get("negative", 0)),
-        "score": float(gpt_result.get("score", 0.0)),
-        "keywords": gpt_result.get("keywords", []),
-        "summary": gpt_result.get("summary", "")
+        "total": total,
+        "positive": positive,
+        "neutral": neutral,
+        "negative": negative,
+        "score": float(gpt_result.get("score", 0.0) or 0.0),
+        "keywords": gpt_result.get("keywords", []) or [],
+        "summary": gpt_result.get("summary", "") or ""
     }
 
 
